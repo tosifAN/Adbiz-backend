@@ -61,6 +61,8 @@ func SetupDatabase() error {
 		err := Db.AutoMigrate(
 			&models.User{},
 			&models.Shop{},
+			&models.Fav1{},
+			&models.Fav2{},
 		)
 
 		if err != nil {

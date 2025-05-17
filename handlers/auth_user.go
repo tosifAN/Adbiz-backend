@@ -3,7 +3,6 @@ package handlers
 import (
 	"adbiz_backend/models"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,15 +19,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	})
 }
 
-// GetUser retrieves a user by ID
+// GetUser retrieves a user by mobile number
 func (h *AuthHandler) GetUser(c *gin.Context) {
 	// Apply rate limiting
 	<-h.rateLimit.C
 
-	// Get user ID from URL parameter
-	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+	// Get mobile number from URL parameter
+	mobileNumber := c.Param("mobile_number")
+	if mobileNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mobile number is required"})
 		return
 	}
 
@@ -39,16 +38,16 @@ func (h *AuthHandler) GetUser(c *gin.Context) {
 		return
 	}
 
-	// Check if user is trying to access their own data
-	if uint(userID) != authUserID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You can only access your own user data"})
+	// Retrieve user from database by mobile number
+	var user models.User
+	if result := h.db.Where("mobile_number = ?", mobileNumber).First(&user); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
-	// Retrieve user from database
-	var user models.User
-	if result := h.db.First(&user, userID); result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	// Check if user is trying to access their own data
+	if user.ID != authUserID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You can only access your own user data"})
 		return
 	}
 
@@ -57,9 +56,57 @@ func (h *AuthHandler) GetUser(c *gin.Context) {
 	})
 }
 
+// GetShopByUserMobile retrieves a shop by user's mobile number
+func (h *AuthHandler) GetShopByUserMobile(c *gin.Context) {
+	// Apply rate limiting
+	<-h.rateLimit.C
+
+	// Get mobile number from URL parameter
+	mobileNumber := c.Param("mobile_number")
+	if mobileNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mobile number is required"})
+		return
+	}
+
+	// Get authenticated user ID from context
+	authUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// First, find the user by mobile number
+	var user models.User
+	if result := h.db.Where("mobile_number = ?", mobileNumber).First(&user); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Check if user is trying to access their own data
+	if user.ID != authUserID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You can only access your own shop data"})
+		return
+	}
+
+	// Now, find the shop associated with this user
+	var shop models.Shop
+	if result := h.db.Where("user_id = ?", user.ID).First(&shop); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Shop not found for this user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"shop": shop,
+	})
+}
+
 // UpdateUserRequest defines the request structure for updating a user
 type UpdateUserRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name         string  `json:"name"`
+	Email        *string `json:"email,omitempty"`
+	ProfilePhoto *string `json:"profile_photo,omitempty"`
+	MobileNumber string  `json:"mobile_number"`
+	Role         string  `json:"role"`
 }
 
 // UpdateUser updates a user's information
@@ -67,10 +114,17 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	// Apply rate limiting
 	<-h.rateLimit.C
 
-	// Get user ID from URL parameter
-	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+	// Get mobile number from URL parameter
+	mobileNumber := c.Param("mobile_number")
+	if mobileNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mobile number is required"})
+		return
+	}
+
+	// First, find the user by mobile number
+	var user models.User
+	if result := h.db.Where("mobile_number = ?", mobileNumber).First(&user); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
@@ -82,7 +136,7 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 	}
 
 	// Check if user is trying to update their own data
-	if uint(userID) != authUserID.(uint) {
+	if user.ID != authUserID.(uint) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You can only update your own user data"})
 		return
 	}
@@ -94,15 +148,22 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Retrieve user from database
-	var user models.User
-	if result := h.db.First(&user, userID); result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
+	// Update user fields if provided in request
+	if req.Name != "" {
+		user.Name = req.Name
 	}
-
-	// Update user fields
-	user.Name = req.Name
+	if req.Email != nil {
+		user.Email = req.Email
+	}
+	if req.ProfilePhoto != nil {
+		user.ProfilePhoto = req.ProfilePhoto
+	}
+	if req.MobileNumber != "" {
+		user.MobileNumber = req.MobileNumber
+	}
+	if req.Role != "" {
+		user.Role = req.Role
+	}
 
 	// Save updated user to database
 	if err := h.db.Save(&user).Error; err != nil {
@@ -112,5 +173,90 @@ func (h *AuthHandler) UpdateUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"user": user,
+	})
+}
+
+type UpdateShopRequest struct {
+	Bio          *string `json:"bio,omitempty"`
+	Location     *string `json:"location,omitempty"`
+	ShopPhoto    *string `json:"shop_photo,omitempty"`
+	ShopUsername string  `json:"shop_username"`
+	ShopName     string  `json:"shop_name"`
+	ProductType  string  `json:"product_type"`
+}
+
+// UpdateUser updates a user's information
+func (h *AuthHandler) UpdateShop(c *gin.Context) {
+	// Apply rate limiting
+	<-h.rateLimit.C
+
+	// Get mobile number from URL parameter
+	mobileNumber := c.Param("mobile_number")
+	if mobileNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mobile number is required"})
+		return
+	}
+
+	// First, find the user by mobile number
+	var user models.User
+	if result := h.db.Where("mobile_number = ?", mobileNumber).First(&user); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Get authenticated user ID from context
+	authUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Check if user is trying to update their own data
+	if user.ID != authUserID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You can only update your own shop data"})
+		return
+	}
+
+	// Parse request body
+	var req UpdateShopRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Now, find the shop associated with this user
+	var shop models.Shop
+	if result := h.db.Where("user_id = ?", user.ID).First(&shop); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Shop not found for this user"})
+		return
+	}
+
+	if req.Bio != nil {
+		shop.Bio = req.Bio
+	}
+	if req.Location != nil {
+		shop.Location = req.Location
+	}
+	if req.ShopPhoto != nil {
+		shop.ShopPhoto = req.ShopPhoto
+	}
+	if req.ShopUsername != "" {
+		shop.ShopUsername = req.ShopUsername
+	}
+	if req.ShopName != "" {
+		shop.ShopName = req.ShopName
+	}
+	if req.ProductType != "" {
+		shop.ProductType = req.ProductType
+	}
+
+	// Save updated shop to database
+	if err := h.db.Save(&shop).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update shop: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": shop,
 	})
 }

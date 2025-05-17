@@ -35,7 +35,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		log.Printf("Failed to cache user data: %v", err)
 	}
 
+	// Generate JWT token
+	token, err := GenerateToken(&user)
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate authentication token"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"user": user,
+		"token": token,
 	})
 }

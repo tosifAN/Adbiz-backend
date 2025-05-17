@@ -16,6 +16,7 @@ type MobileVerificationRequest struct {
 type UserExistsResponse struct {
 	Exists bool         `json:"exists"`
 	User   *models.User `json:"user,omitempty"`
+	Token  string       `json:"token,omitempty"`
 }
 
 // VerifyMobile checks if a user with the given mobile number exists
@@ -41,9 +42,18 @@ func (h *AuthHandler) VerifyMobile(c *gin.Context) {
 			log.Printf("Failed to cache user data: %v", err)
 		}
 
+		// Generate JWT token
+		token, err := GenerateToken(&user)
+		if err != nil {
+			log.Printf("Failed to generate token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate authentication token"})
+			return
+		}
+
 		c.JSON(http.StatusOK, UserExistsResponse{
 			Exists: true,
 			User:   &user,
+			Token:  token,
 		})
 	} else {
 		// User doesn't exist
@@ -99,7 +109,18 @@ func (h *AuthHandler) RegisterBasicInfo(c *gin.Context) {
 		log.Printf("Failed to cache user data: %v", err)
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"user": user})
+	// Generate JWT token
+	token, err := GenerateToken(&user)
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate authentication token"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"user":  user,
+		"token": token,
+	})
 }
 
 func (h *AuthHandler) RegisterSellerDetails(c *gin.Context) {
@@ -159,8 +180,17 @@ func (h *AuthHandler) RegisterSellerDetails(c *gin.Context) {
 		log.Printf("Failed to cache user data: %v", err)
 	}
 
+	// Generate JWT token
+	token, err := GenerateToken(&user)
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate authentication token"})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Shop registered successfully",
 		"shop":    shop,
+		"token":   token,
 	})
 }
