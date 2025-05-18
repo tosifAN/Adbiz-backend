@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"adbiz_backend/models"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -61,12 +62,14 @@ func (h *AuthHandler) GetShopByUserMobile(c *gin.Context) {
 	// Apply rate limiting
 	<-h.rateLimit.C
 
+	fmt.Println("first")
 	// Get mobile number from URL parameter
 	mobileNumber := c.Param("mobile_number")
 	if mobileNumber == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Mobile number is required"})
 		return
 	}
+	fmt.Println("first2")
 
 	// Get authenticated user ID from context
 	authUserID, exists := c.Get("user_id")
@@ -74,6 +77,7 @@ func (h *AuthHandler) GetShopByUserMobile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 		return
 	}
+	fmt.Println("first3")
 
 	// First, find the user by mobile number
 	var user models.User
@@ -81,6 +85,7 @@ func (h *AuthHandler) GetShopByUserMobile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
+	fmt.Println("you are here", user)
 
 	// Check if user is trying to access their own data
 	if user.ID != authUserID.(uint) {
@@ -88,12 +93,15 @@ func (h *AuthHandler) GetShopByUserMobile(c *gin.Context) {
 		return
 	}
 
+	fmt.Println("now here")
+
 	// Now, find the shop associated with this user
 	var shop models.Shop
 	if result := h.db.Where("user_id = ?", user.ID).First(&shop); result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Shop not found for this user"})
 		return
 	}
+	fmt.Println("this is your shop", shop)
 
 	c.JSON(http.StatusOK, gin.H{
 		"shop": shop,
