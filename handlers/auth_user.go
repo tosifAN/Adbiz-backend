@@ -268,3 +268,61 @@ func (h *AuthHandler) UpdateShop(c *gin.Context) {
 		"user": shop,
 	})
 }
+
+// GetAllUser retrieves all users in the database
+func (h *AuthHandler) GetAllUsers(c *gin.Context) {
+	// Apply rate limiting
+	<-h.rateLimit.C
+
+	// Get authenticated user ID from context
+	_, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Retrieve all users from the database
+	var users []models.User
+	if result := h.db.Find(&users); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Users not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"users": users,
+	})
+}
+
+type ListOfUsersMobileNumber struct {
+	MobileNumbers []string `json:"mobile_numbers" binding:"required"`
+}
+
+// GetAllUserInfo from list of mobile numbers
+func (h *AuthHandler) GetAllFavUsersInfo(c *gin.Context) {
+	// Apply rate limiting
+	<-h.rateLimit.C
+
+	var req ListOfUsersMobileNumber
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get authenticated user ID from context
+	_, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Retrieve users from database by list of mobile numbers
+	var users []models.User
+	if result := h.db.Where("mobile_number IN ?", req.MobileNumbers).Find(&users); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Users not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"users": users,
+	})
+}

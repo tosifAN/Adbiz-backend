@@ -46,6 +46,9 @@ func SetupRouter() *gin.Engine {
 			protected.DELETE("/user/:mobile_number", authHandler.DeleteUser)
 			protected.DELETE("/user/shop/:mobile_number", authHandler.DeleteShop)
 			protected.GET("/user/favs/:mobile_number", authHandler.GetFavs)
+			protected.GET("/users", authHandler.GetAllUsers)            //get all users in database
+			protected.POST("/favusers", authHandler.GetAllFavUsersInfo) //get all favusersinfo
+
 		}
 	}
 	return r
